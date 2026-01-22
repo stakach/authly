@@ -39,6 +39,32 @@ module Authly
       token.scope.should eq ""
     end
 
+    it "uses scope from request parameters for password grant" do
+      grant = Grant.new("password",
+        client_id: client_id,
+        client_secret: client_secret,
+        username: username,
+        password: password,
+        scope: "read write")
+
+      token = grant.token
+
+      token.client_id.should eq client_id
+      token.scope.should eq "read write"
+    end
+
+    it "uses scope from request parameters for client_credentials grant" do
+      grant = Grant.new("client_credentials",
+        client_id: client_id,
+        client_secret: client_secret,
+        scope: "admin")
+
+      token = grant.token
+
+      token.client_id.should eq client_id
+      token.scope.should eq "admin"
+    end
+
     it "creates an access token with valid authorization code grant" do
       grant = Grant.new("authorization_code",
         client_id: client_id,

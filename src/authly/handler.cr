@@ -6,6 +6,9 @@ module Authly
     include HTTP::Handler
 
     def call(context)
+      puts "\n\n INSIDE Authly Handler\n\n"
+      pp context
+      puts "\n***********************************\n"
       handle_route(context) || call_next(context)
     end
 

@@ -1,6 +1,11 @@
 module Authly
   module GrantStrategy
     abstract def authorized? : Bool
+
+    # Optional: Returns user_id for grants that authenticate users (e.g., password grant)
+    def user_id : String?
+      nil
+    end
   end
 
   class GrantFactory
@@ -50,6 +55,7 @@ module Authly
     @token_manager : TokenManager = TokenManager.instance
     @refresh_token : String
     @cert_thumbprint : String?
+    @scope : String?
 
     def initialize(grant_type : String, **args)
       @grant_strategy = GrantFactory.create(grant_type, **args)
@@ -57,6 +63,7 @@ module Authly
       @client_id = args.fetch(:client_id, "").to_s
       @code = args.fetch(:code, "").to_s
       @cert_thumbprint = args[:cert_thumbprint]?.try(&.to_s)
+      @scope = args[:scope]?.try(&.to_s)
     end
 
     def token : AccessToken
@@ -77,7 +84,9 @@ module Authly
     end
 
     private def access_token
-      AccessToken.new(@grant_strategy.client_id, scope, generate_id_token, @cert_thumbprint)
+      # Get user_id from grant strategy (e.g., password grant) if available
+      user_id = @grant_strategy.user_id
+      AccessToken.new(@grant_strategy.client_id, scope, generate_id_token, @cert_thumbprint, user_id)
     end
 
     private def generate_id_token
@@ -95,6 +104,10 @@ module Authly
     end
 
     private def scope : String
+      # Use explicit scope from request if provided, otherwise extract from auth code
+      if (scp = @scope) && !scp.empty?
+        return scp
+      end
       return "" if @code.empty?
       auth_code["scope"].as_s
     end

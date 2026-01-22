@@ -63,11 +63,35 @@ module Authly
         return {"active" => false, "exp" => payload["exp"].as_i64}
       end
 
-      # Return authly access token
+      # Handle scope as either array or string (RFC 9068 compliance)
+      scope_value = payload["scope"]?
+      scope_str = if scope_value
+                    if scope_value.as_a?
+                      scope_value.as_a.map(&.as_s).join(" ")
+                    else
+                      scope_value.as_s
+                    end
+                  else
+                    ""
+                  end
+
+      # Handle cid - fallback to aud if cid not present
+      cid_value = payload["cid"]? || payload["aud"]?
+      cid_str = if cid_value
+                  if cid_value.as_s?
+                    cid_value.as_s
+                  else
+                    cid_value.to_s
+                  end
+                else
+                  ""
+                end
+
+      # Return OAuth2 introspection response
       {
         "active" => true,
-        "scope"  => payload["scope"].as_s,
-        "cid"    => payload["cid"].as_s,
+        "scope"  => scope_str,
+        "cid"    => cid_str,
         "exp"    => payload["exp"].as_i64,
         "sub"    => payload["sub"].as_s,
       }

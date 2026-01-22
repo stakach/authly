@@ -12,6 +12,7 @@ module Authly
       refresh_token = params.fetch("refresh_token", "")
       code = params.fetch("code", "")
       code_verifier = params.fetch("code_verifier", "")
+      scope = params.fetch("scope", "") # Extract scope for password/client_credentials grants
 
       # Extract certificate thumbprint for mTLS binding
       cert_thumbprint = extract_certificate_thumbprint(context)
@@ -27,6 +28,7 @@ module Authly
         verifier: code_verifier,
         refresh_token: refresh_token,
         cert_thumbprint: cert_thumbprint,
+        scope: scope,
       )
 
       ResponseHelper.write(context, 200, "application/json", access_token.to_json)

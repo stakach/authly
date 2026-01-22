@@ -20,12 +20,15 @@ module Authly
         "exp"   => @config.access_ttl.from_now.to_unix,
         "scope" => scope,
         "jti"   => jti,
-      } of String => (String | Int64 | Hash(String, String))
+      } of String => ClaimValue
 
       # Add certificate binding if thumbprint is provided
       if cert_thumbprint
         payload["cnf"] = {"x5t#S256" => cert_thumbprint}
       end
+
+      # Allow custom claims to be added via ClaimsProvider
+      payload = @config.claims_provider.enrich_access_token(payload, client_id, sub, scope)
 
       Authly.jwt_encode(payload)
     end
@@ -42,7 +45,25 @@ module Authly
     end
 
     def store_token_metadata(jti : String, client_id : String, scope : String, sub : String, expires_at : Time, cert_thumbprint : String? = nil)
-      # JWT tokens are self-contained, no need to store metadata
+      # JWT tokens are self-contained, but can optionally be persisted for
+      # revocation, listing, and audit trail purposes
+      if @config.persist_jwt_tokens?
+        payload = {} of String => (String | Int64 | Bool | Float64)
+        payload["cid"] = client_id
+        payload["scope"] = scope
+        payload["sub"] = sub
+        payload["iat"] = Time.utc.to_unix
+        payload["exp"] = expires_at.to_unix
+        payload["token_type"] = "access_token"
+        payload["jti"] = jti
+
+        # Add certificate thumbprint if provided
+        if cert_thumbprint
+          payload["cnf"] = cert_thumbprint
+        end
+
+        @config.token_store.store(jti, payload)
+      end
     end
   end
 
