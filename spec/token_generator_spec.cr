@@ -81,17 +81,53 @@ module Authly
     end
 
     describe "#store_token_metadata" do
-      it "does not store metadata for JWT tokens" do
+      it "does not store metadata when persist_jwt_tokens is false" do
         generator = JWTTokenGenerator.new
         store = InMemoryStore.new
         Authly.config.token_store = store
+        Authly.config.persist_jwt_tokens = false
 
         generator.store_token_metadata("jti_1", "client_1", "read", "sub_1", Time.utc)
 
-        # JWT tokens are self-contained, no metadata stored
+        # JWT tokens are self-contained, no metadata stored by default
         expect_raises(Error) do
           store.fetch("jti_1")
         end
+      end
+
+      it "stores metadata when persist_jwt_tokens is true" do
+        generator = JWTTokenGenerator.new
+        store = InMemoryStore.new
+        Authly.config.token_store = store
+        Authly.config.persist_jwt_tokens = true
+
+        expires_at = 1.hour.from_now
+        generator.store_token_metadata("jti_1", "client_1", "read write", "sub_1", expires_at)
+
+        payload = store.fetch("jti_1")
+        payload["cid"].should eq "client_1"
+        payload["scope"].should eq "read write"
+        payload["sub"].should eq "sub_1"
+        payload["jti"].should eq "jti_1"
+
+        # Reset
+        Authly.config.persist_jwt_tokens = false
+      end
+
+      it "stores expiration timestamp when persist_jwt_tokens is true" do
+        generator = JWTTokenGenerator.new
+        store = InMemoryStore.new
+        Authly.config.token_store = store
+        Authly.config.persist_jwt_tokens = true
+
+        expires_at = 2.hours.from_now
+        generator.store_token_metadata("jti_1", "client_1", "read", "sub_1", expires_at)
+
+        payload = store.fetch("jti_1")
+        payload["exp"].should eq expires_at.to_unix
+
+        # Reset
+        Authly.config.persist_jwt_tokens = false
       end
     end
   end

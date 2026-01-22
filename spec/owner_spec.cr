@@ -45,41 +45,46 @@ module Authly
     end
 
     describe "#authorized?" do
-      it "returns true with valid username and password" do
+      it "returns owner id with valid username and password" do
+        owners = Owners.new
+        owner = Owner.new("john", "secret123")
+        owners << owner
+
+        result = owners.authorized?("john", "secret123")
+        result.should_not be_nil
+        result.should eq owner.id
+      end
+
+      it "returns nil with invalid password" do
         owners = Owners.new
         owners << Owner.new("john", "secret123")
 
-        owners.authorized?("john", "secret123").should be_true
+        owners.authorized?("john", "wrong_password").should be_nil
       end
 
-      it "returns false with invalid password" do
+      it "returns nil with invalid username" do
         owners = Owners.new
         owners << Owner.new("john", "secret123")
 
-        owners.authorized?("john", "wrong_password").should be_false
+        owners.authorized?("jane", "secret123").should be_nil
       end
 
-      it "returns false with invalid username" do
-        owners = Owners.new
-        owners << Owner.new("john", "secret123")
-
-        owners.authorized?("jane", "secret123").should be_false
-      end
-
-      it "returns false when no owners exist" do
+      it "returns nil when no owners exist" do
         owners = Owners.new
 
-        owners.authorized?("john", "password").should be_false
+        owners.authorized?("john", "password").should be_nil
       end
 
       it "distinguishes between different owners" do
         owners = Owners.new
-        owners << Owner.new("john", "pass1")
-        owners << Owner.new("jane", "pass2")
+        owner1 = Owner.new("john", "pass1")
+        owner2 = Owner.new("jane", "pass2")
+        owners << owner1
+        owners << owner2
 
-        owners.authorized?("john", "pass1").should be_true
-        owners.authorized?("jane", "pass2").should be_true
-        owners.authorized?("john", "pass2").should be_false
+        owners.authorized?("john", "pass1").should eq owner1.id
+        owners.authorized?("jane", "pass2").should eq owner2.id
+        owners.authorized?("john", "pass2").should be_nil
       end
     end
 

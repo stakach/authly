@@ -1,6 +1,15 @@
 require "./spec_helper"
 
 module Authly
+  class ArrayScopeClaimsProvider
+    include ClaimsProvider
+
+    def enrich_access_token(payload : JWTPayload, client_id : String, sub : String, scope : String) : JWTPayload
+      payload["scope"] = scope.split(" ")
+      payload
+    end
+  end
+
   describe "Token Strategy" do
     client_id = "1"
     scope = "read"
@@ -65,6 +74,47 @@ module Authly
         result["active"].should be_true
         result["cid"].should eq client_id
         result["scope"].should eq scope
+
+        Authly.config.token_strategy = original_strategy
+      end
+
+      it "introspects JWT tokens with array scopes" do
+        original_strategy = Authly.config.token_strategy
+        Authly.config.token_strategy = :jwt
+
+        original_provider = Authly.config.claims_provider
+        Authly.config.claims_provider = ArrayScopeClaimsProvider.new
+
+        token = AccessToken.new(client_id, "read write")
+        result = Authly.introspect(token.access_token)
+
+        result["active"].should be_true
+        result["scope"].should eq "read write" # Should be joined back to string
+
+        Authly.config.claims_provider = original_provider
+        Authly.config.token_strategy = original_strategy
+      end
+
+      it "introspects JWT tokens using aud when cid is missing" do
+        original_strategy = Authly.config.token_strategy
+        Authly.config.token_strategy = :jwt
+
+        # Create a custom token without cid but with aud
+        payload = {
+          "sub"   => "sub_123",
+          "iss"   => Authly.config.issuer,
+          "aud"   => client_id,
+          "iat"   => Time.utc.to_unix,
+          "exp"   => 1.hour.from_now.to_unix,
+          "scope" => scope,
+          "jti"   => Random::Secure.hex(32),
+        }
+        custom_token = Authly.jwt_encode(payload)
+
+        result = Authly.introspect(custom_token)
+
+        result["active"].should be_true
+        result["cid"].should eq client_id # Should fall back to aud
 
         Authly.config.token_strategy = original_strategy
       end

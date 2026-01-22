@@ -11,8 +11,14 @@ module Authly
     property token_store : TokenStore = InMemoryStore.new
     property algorithm : JWT::Algorithm = JWT::Algorithm::HS256
     property token_strategy : Symbol = :jwt
+    property claims_provider : ClaimsProvider = DefaultClaimsProvider.new
     property state_store : StateStore = InMemoryStateStore.new
     property device_code_store : DeviceCodeStore = InMemoryDeviceCodeStore.new
+
+    # JWT Token Persistence
+    # When true, JWT tokens are stored via token_store for persistence/management
+    # This enables token listing, revocation by token string, and audit trails
+    property? persist_jwt_tokens : Bool = false
 
     # PKCE Enforcement
     property? enforce_pkce : Bool = false

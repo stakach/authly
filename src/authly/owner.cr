@@ -20,10 +20,10 @@ module Authly
       @owners << owner
     end
 
-    def authorized?(username : String, password : String) : Bool
-      any? do |owner|
-        owner.username == username && owner.password == password
-      end
+    # Returns owner id on success, nil on failure
+    def authorized?(username : String, password : String) : String?
+      owner = find { |own| own.username == username && own.password == password }
+      owner.try(&.id)
     end
 
     def id_token(user_id : String) : Hash(String, String | Int64)
