@@ -77,6 +77,60 @@ describe "JARM (JWT Secured Authorization Response Mode)" do
       payload["state"].as_s.should eq("state_xyz")
     end
 
+    it "builds an encrypted JWE response with authenticated header" do
+      rsa = OpenSSL::PKey::RSA.new(2048)
+      builder = Authly::JarmBuilder.new(
+        issuer: "https://auth.example.com",
+        audience: "client_123",
+        lifetime: 10.minutes,
+        signing_key: "test_secret_key_for_testing",
+        signing_algorithm: JWT::Algorithm::HS256,
+        encryption_key: rsa.public_key.to_pem,
+        encryption_algorithm: "RSA-OAEP",
+        encryption_encoding: "A256GCM"
+      )
+
+      jwe = builder.build_authorization_response(code: "auth_code_123", state: "state_xyz")
+      parts = jwe.split('.')
+      parts.size.should eq(5)
+      encoded_header, encrypted_key, iv, ciphertext, tag = parts
+
+      header = JSON.parse(Base64.decode_string(encoded_header))
+      header["alg"].as_s.should eq("RSA-OAEP")
+      header["enc"].as_s.should eq("A256GCM")
+
+      cek = rsa.private_decrypt(Base64.decode(encrypted_key), LibCrypto::Padding::PKCS1_OAEP_PADDING)
+
+      decrypt = ->(aad : String) do
+        cipher = OpenSSL::Cipher.new("aes-256-gcm")
+        cipher.decrypt
+        cipher.key = cek
+        cipher.iv = Base64.decode(iv)
+
+        aad_bytes = aad.to_slice
+        out_len = 0
+        LibCrypto.evp_cipherupdate(cipher.@ctx, nil, pointerof(out_len), aad_bytes, aad_bytes.size).should eq(1)
+
+        plaintext = IO::Memory.new
+        plaintext.write(cipher.update(Base64.decode(ciphertext)))
+
+        auth_tag = Base64.decode(tag)
+        LibCrypto.evp_cipher_ctx_ctrl(cipher.@ctx, LibCrypto::EVP_CTRL_GCM_SET_TAG, auth_tag.size, auth_tag.to_unsafe.as(Void*)).should eq(1)
+        plaintext.write(cipher.final)
+        plaintext.to_s
+      end
+
+      # The nested JWT decrypts using the encoded header as AAD (RFC 7516 section 5.1)
+      payload, _header = JWT.decode(decrypt.call(encoded_header), "test_secret_key_for_testing", JWT::Algorithm::HS256)
+      payload["code"].as_s.should eq("auth_code_123")
+      payload["state"].as_s.should eq("state_xyz")
+
+      # Tampering with the protected header must fail tag verification
+      expect_raises(OpenSSL::Cipher::Error) do
+        decrypt.call(Base64.urlsafe_encode(%({"alg":"RSA-OAEP","enc":"A128GCM","cty":"JWT"}), padding: false))
+      end
+    end
+
     it "generates form_post HTML" do
       html = Authly::JarmBuilder.build_form_post_html(
         "https://client.example.com/callback",

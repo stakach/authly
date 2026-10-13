@@ -5,14 +5,15 @@ require "openssl_ext"
 require "base64"
 require "random/secure"
 
-# LibCrypto extensions for GCM mode
-lib LibCrypto
-  EVP_CTRL_GCM_SET_IVLEN =  0x9
-  EVP_CTRL_GCM_GET_TAG   = 0x10
-  EVP_CTRL_GCM_SET_TAG   = 0x11
+# LibCrypto extensions for GCM mode (provided by the stdlib from Crystal 1.22)
+{% if compare_versions(Crystal::VERSION, "1.22.0-0") < 0 %}
+  lib LibCrypto
+    EVP_CTRL_GCM_GET_TAG = 0x10
+    EVP_CTRL_GCM_SET_TAG = 0x11
 
-  fun evp_cipher_ctx_ctrl = EVP_CIPHER_CTX_ctrl(ctx : Void*, type : Int32, arg : Int32, ptr : Void*) : Int32
-end
+    fun evp_cipher_ctx_ctrl = EVP_CIPHER_CTX_ctrl(ctx : Void*, type : Int32, arg : Int32, ptr : Void*) : Int32
+  end
+{% end %}
 
 module Authly
   # JarmBuilder constructs JWT-secured authorization responses per RFC 9101
@@ -240,11 +241,13 @@ module Authly
       cipher.iv = iv
 
       # Set Additional Authenticated Data (AAD)
-      # For GCM mode, we update the cipher with AAD before encrypting
+      # In GCM mode AAD is supplied via EVP_CipherUpdate with a null output buffer,
+      # `cipher.update` would encrypt it as plaintext instead of authenticating it
       aad_bytes = aad.to_slice
       unless aad_bytes.empty?
-        # Pass AAD through update without producing ciphertext output
-        cipher.update(aad_bytes)
+        out_len = 0
+        ret = LibCrypto.evp_cipherupdate(cipher.@ctx, nil, pointerof(out_len), aad_bytes, aad_bytes.size)
+        raise "Failed to set GCM additional authenticated data" if ret != 1
       end
 
       # Encrypt the plaintext
@@ -255,14 +258,22 @@ module Authly
 
       # Get authentication tag (16 bytes for GCM)
       # We need to use LibCrypto directly to get the GCM tag
-      auth_tag = Bytes.new(16)
-      ctx = cipher.@ctx # Access the internal context
-      ret = LibCrypto.evp_cipher_ctx_ctrl(ctx, LibCrypto::EVP_CTRL_GCM_GET_TAG, 16, auth_tag.to_unsafe.as(Void*))
-      if ret != 1
-        raise "Failed to get GCM authentication tag"
-      end
+      {ciphertext, gcm_tag(cipher)}
+    end
 
-      {ciphertext, auth_tag}
+    # Crystal 1.22+ exposes the GCM tag via OpenSSL::Cipher#gcm_tag
+    private def gcm_tag(cipher : OpenSSL::Cipher) : Bytes
+      {% if compare_versions(Crystal::VERSION, "1.22.0-0") >= 0 %}
+        cipher.gcm_tag
+      {% else %}
+        auth_tag = Bytes.new(16)
+        ctx = cipher.@ctx # Access the internal context
+        ret = LibCrypto.evp_cipher_ctx_ctrl(ctx, LibCrypto::EVP_CTRL_GCM_GET_TAG, 16, auth_tag.to_unsafe.as(Void*))
+        if ret != 1
+          raise "Failed to get GCM authentication tag"
+        end
+        auth_tag
+      {% end %}
     end
 
     # Base64 URL-safe encoding without padding
